@@ -1,3 +1,4 @@
+```javascript
 (async () => {
     const webpackModules = Object.values(webpackChunkdiscord_app.push([[Symbol()], {}, r => r]).c);
     webpackChunkdiscord_app.pop();
@@ -122,3 +123,4 @@
         console.log(`%c[Done] ${q.config.messages.questName}`, "color: #43b581");
     }
 })();
+```
