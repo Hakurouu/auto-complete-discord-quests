@@ -1,4 +1,5 @@
-```(async () => {
+```javascript
+(async () => {
     const webpackModules = Object.values(webpackChunkdiscord_app.push([[Symbol()], {}, r => r]).c);
     webpackChunkdiscord_app.pop();
 
