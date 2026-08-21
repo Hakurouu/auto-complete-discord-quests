@@ -1,0 +1,74 @@
+(async () => {
+    const w = Object.values(webpackChunkdiscord_app.push([[Symbol()], {}, r => r]).c);
+    webpackChunkdiscord_app.pop();
+    const find = (p, k = 'A') => w.find(m => m?.exports?.[k]?.__proto__?.[p] || m?.exports?.[k]?.[p])?.exports?.[k];
+
+    const Api = w.find(m => m?.exports?.Bo?.get)?.exports.Bo;
+    const Disp = w.find(m => m?.exports?.h?.__proto__?.flushWaitQueue)?.exports.h;
+    const Quests = find('getQuest');
+    const Games = w.find(m => m?.exports?.Ay?.getRunningGames)?.exports.Ay;
+    const Stream = find('getStreamerActiveStreamMetadata');
+    const Chans = find('getAllThreadsForParent');
+
+    const TASKS = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"];
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    for (const q of [...Quests.quests.values()].filter(q => q.userStatus?.enrolledAt && !q.userStatus?.completedAt && new Date(q.config.expiresAt) > Date.now())) {
+        const cfg = q.config.taskConfigV2 ?? q.config.taskConfig;
+        const task = TASKS.find(t => cfg.tasks[t]);
+        if (!task) continue;
+
+        const target = cfg.tasks[task].target;
+        const appId = q.config.application?.id ?? q.config.applicationId;
+        const appName = q.config.application?.name ?? "Game";
+        let prog = q.userStatus?.progress?.[task]?.value ?? 0;
+
+        if (task.includes("WATCH_VIDEO")) {
+            while (prog < target) {
+                prog = Math.min(target, prog + 7 + Math.random());
+                const res = await Api.post({ url: `/quests/${q.id}/video-progress`, body: { timestamp: prog } });
+                if (res.body?.completed_at) break;
+                await sleep(1500);
+            }
+        } else if (task === "PLAY_ON_DESKTOP" && typeof DiscordNative !== "undefined") {
+            const mock = { id: appId, name: appName, pid: 9999, start: Date.now(), exePath: "c:/fake.exe" };
+            const origG = Games.getRunningGames, origP = Games.getGameForPID;
+            Games.getRunningGames = () => [mock]; Games.getGameForPID = () => mock;
+            Disp.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [], added: [mock], games: [mock] });
+
+            await new Promise(res => {
+                const h = data => {
+                    if ((q.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : data.userStatus.progress.PLAY_ON_DESKTOP.value) >= target) {
+                        Disp.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", h);
+                        Games.getRunningGames = origG; Games.getGameForPID = origP;
+                        res();
+                    }
+                };
+                Disp.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", h);
+            });
+        } else if (task === "STREAM_ON_DESKTOP" && typeof DiscordNative !== "undefined") {
+            const orig = Stream.getStreamerActiveStreamMetadata;
+            Stream.getStreamerActiveStreamMetadata = () => ({ id: appId, pid: 1337, sourceName: null });
+
+            await new Promise(res => {
+                const h = data => {
+                    if ((q.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : data.userStatus.progress.STREAM_ON_DESKTOP.value) >= target) {
+                        Disp.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", h);
+                        Stream.getStreamerActiveStreamMetadata = orig;
+                        res();
+                    }
+                };
+                Disp.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", h);
+            });
+        } else if (task === "PLAY_ACTIVITY") {
+            const cid = Chans.getSortedPrivateChannels()[0]?.id;
+            while (prog < target) {
+                const res = await Api.post({ url: `/quests/${q.id}/heartbeat`, body: { stream_key: `call:${cid}:1`, terminal: false } });
+                prog = res.body.progress.PLAY_ACTIVITY.value;
+                await sleep(20000);
+            }
+            await Api.post({ url: `/quests/${q.id}/heartbeat`, body: { stream_key: `call:${cid}:1`, terminal: true } });
+        }
+        console.log(`[Done] ${q.config.messages?.questName ?? "Quest"}`);
+    }
+})();
